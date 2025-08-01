@@ -1,0 +1,47 @@
+#Options +FollowSymlinks
+#AddType applicatoin/x-htpd-php .html .htm
+Options -Indexes
+RewriteEngine On
+RewriteBase /
+RewriteCond %{HTTP_HOST} ^booburysfurniture\.com$ [NC]
+RewriteRule ^(.*)$ http://www.booburysfurniture.com/$1 [L,R=301]
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule . index.php [L]
+
+# # ----------------------------------------------------------------------
+# # Enable mod_rewrite (must be enabled in Apache)
+# RewriteEngine On
+
+# # ----------------------------------------------------------------------
+# # Force HTTPS (optional - comment out if not needed)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^ http://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# # ----------------------------------------------------------------------
+# # Remove .php extension (optional - comment out if not used)
+# RewriteCond %{REQUEST_FILENAME} !-d
+# RewriteCond %{REQUEST_FILENAME}\.php -f
+# RewriteRule ^(.*)$ $1.php [L]
+
+# # ----------------------------------------------------------------------
+# # Route all requests to index.php (main entry point)
+# RewriteCond %{REQUEST_FILENAME} !-f
+# RewriteCond %{REQUEST_FILENAME} !-d
+# RewriteRule ^ index.php [QSA,L]
+
+# # ----------------------------------------------------------------------
+# # Disable directory browsing
+# Options -Indexes
+
+# # ----------------------------------------------------------------------
+# # Set default charset
+# AddDefaultCharset UTF-8
+
+# # ----------------------------------------------------------------------
+# # MIME types and security headers (optional but good)
+# <IfModule mod_headers.c>
+#     Header set X-Frame-Options "SAMEORIGIN"
+#     Header set X-Content-Type-Options "nosniff"
+#     Header set Referrer-Policy "strict-origin-when-cross-origin"
+# </IfModule>
