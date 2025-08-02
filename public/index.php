@@ -8,17 +8,17 @@
 // Define core constants
 $try1 = realpath(__DIR__);
 $try2 = realpath(__DIR__ . '../../');
-if ($try1 && is_dir($try1) && file_exists($try1 . '/brain/installation.php') && is_dir($try1 . '/brain')) {
+if ($try1 && is_dir($try1) && file_exists($try1 . '/brain/ct_installation.php') && is_dir($try1 . '/brain')) {
     define('ROOT', $try1);
-} elseif ($try2 && is_dir($try2) && file_exists($try2 . '/brain/installation.php') && is_dir($try2 . '/brain')) {
+} elseif ($try2 && is_dir($try2) && file_exists($try2 . '/brain/ct_installation.php') && is_dir($try2 . '/brain')) {
     define('ROOT', $try2);
 } else {
-    die("❌ Unable to determine ROOT path.");
+    die("❌ Unable to determine ROOT path.".ROOT);
 }
 define('DS', DIRECTORY_SEPARATOR);
 define('INSTALL_LOCK_FILE', ROOT . DS . 'installed.lock');
 define('BRAIN_DIR', ROOT . DS . 'brain');
-define('BRAIN_FILENAME', 'ctbrain');
+define('BRAIN_FILENAME', 'ct_brain');
 define('BRAIN_FILE', BRAIN_DIR . DS . BRAIN_FILENAME . '.php');
 
 /**
