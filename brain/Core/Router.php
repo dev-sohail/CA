@@ -1,668 +1,529 @@
 <?php
 
-namespace Brain\Classes\Core;
-
-use Brain\Classes\Api\ApiResponse;
-use Brain\Classes\Cache\CacheManager;
-use Brain\Classes\Http\Middleware;
-use Brain\Classes\Http\Request;
-use Brain\Classes\Http\Response;
-use Brain\Classes\Logging\Logger;
-use Brain\Classes\Security\Csrf;
-use Brain\Classes\Security\Firewall;
-use Exception;
-
 /**
- * Enhanced Router Core Class
- * Handles routing, middleware, module loading, and SEO URL management
+ * Simple and Clean Router Class
+ * Handles routing for a PHP MVC framework with easy-to-understand variable names
  */
-final class Router
+class Router
 {
-    private Registry $registry;
+    // Core dependencies
+    private $app;
     private $db;
     private $config;
-    private CacheManager $cache;
-    private Logger $logger;
-    private Middleware $middleware;
-    private Firewall $firewall;
+    private $cache;
+    private $logger;
+
+    // Request information
+    private string $url = '';
+    private string $originalUrl = '';
+    private array $params = [];
     
-    // Route properties
-    private string $path = '';
-    private string $requri = '';
-    private array $args = [];
-    private array $routes = [];
-    private array $middlewareStack = [];
-    private array $moduleRoutes = [];
+    // Route information
+    public string $controllerFile = '';
+    public string $controllerName = '';
+    public string $actionName = '';
+    public string $moduleName = '';
+    public string $areaName = ''; // admin, api, app
     
-    // Controller properties
-    public ?string $file = null;
-    public string $controller = '';
-    public string $action = '';
-    public string $module = '';
-    public string $area = ''; // admin, api, app
-    public int $c_p_index = 1;
-    public array $slog_data = [];
-    
-    // Route matching
-    private array $routePatterns = [];
-    private array $namedRoutes = [];
-    private string $currentLanguage = 'en';
-    private array $supportedLanguages = ['en', 'ar'];
-    
-    // API and versioning
+    // Settings
+    private int $page = 1;
+    private string $language = 'en';
+    private array $languages = ['en', 'ar', 'fr', 'es'];
     private string $apiVersion = 'v1';
-    private bool $isApiRequest = false;
+    private bool $isApi = false;
+    private bool $isAdmin = false;
     
-    public function __construct(Registry $registry)
+    // Routes and middleware
+    private array $routes = [];
+    private array $middleware = [];
+    private $controller;
+
+    /**
+     * Constructor - Initialize the router
+     */
+    public function __construct($app)
     {
-        $this->registry = $registry;
-        $this->db = $registry->get('db');
-        $this->config = $registry->get('config');
-        $this->cache = $registry->get('cache');
-        $this->logger = $registry->get('logger');
-        $this->middleware = new Middleware($registry);
-        $this->firewall = new Firewall($registry);
+        $this->app = $app;
+        $this->db = $app->get('db');
+        $this->config = $app->get('config');
+        $this->cache = $app->get('cache');
+        $this->logger = $app->get('logger');
         
-        $this->loadModuleRoutes();
-        $this->initializeRoutes();
+        $this->loadRoutes();
+        $this->setupDefaults();
     }
 
     /**
-     * Main routing execution method
+     * Main method to handle routing
      */
-    public function run(): void
+    public function run()
     {
         try {
-            // Security checks
-            $this->firewall->checkRequest();
-            
-            // Parse and resolve route
-            $this->parseRequest();
-            $this->resolveRoute();
-            
-            // Handle middleware stack
+            $this->parseUrl();
+            $this->findRoute();
             $this->runMiddleware();
-            
-            // Load and execute controller
             $this->loadController();
-            $this->executeAction();
-            
+            $this->callAction();
         } catch (Exception $e) {
-            $this->handleRoutingError($e);
+            $this->handleError($e);
         }
     }
+}
 
+protected class chunk1 extends Router
+{
     /**
-     * Parse incoming request
+     * Parse the incoming URL
      */
-    private function parseRequest(): void
+    private function parseUrl()
     {
-        $this->detectLanguage();
-        $this->cleanRequestUri();
-        $this->detectApiRequest();
-        $this->extractPaginationInfo();
+        // Get the URL from request
+        $this->originalUrl = $_SERVER['REQUEST_URI'] ?? '/';
         
-        // Store processed URI for other components
-        $this->registry->set('processedUri', $this->requri);
-        $this->registry->set('currentLanguage', $this->currentLanguage);
-    }
-
-    /**
-     * Detect and set current language
-     */
-    private function detectLanguage(): void
-    {
-        $fullurl = explode('/', substr($_SERVER['REQUEST_URI'], 1), 2);
-        $langCandidate = str_replace("-", " ", $fullurl[0] ?? '');
-        
-        if (in_array($langCandidate, $this->supportedLanguages)) {
-            $this->currentLanguage = $langCandidate;
-            $this->requri = str_replace([$langCandidate . '/'], '', $_SERVER['REQUEST_URI']);
-        } else {
-            $this->requri = $_SERVER['REQUEST_URI'];
-        }
-    }
-
-    /**
-     * Clean and prepare request URI
-     */
-    private function cleanRequestUri(): void
-    {
         // Remove query string
-        $this->requri = preg_replace('/\?.*/', '', $this->requri);
+        $this->url = strtok($this->originalUrl, '?');
         
-        // Trim slashes
-        $this->path = ltrim(rtrim($this->requri, "/"), "/");
+        // Remove leading and trailing slashes
+        $this->url = trim($this->url, '/');
         
-        // Store original path
-        $this->registry->set('originalPath', $this->path);
+        // Extract language if present
+        $this->extractLanguage();
+        
+        // Extract pagination
+        $this->extractPagination();
+        
+        // Check if API request
+        $this->checkApiRequest();
+        
+        // Check if admin request
+        $this->checkAdminRequest();
+        
+        // Store in app for global access
+        $this->app->set('currentUrl', $this->url);
+        $this->app->set('currentLanguage', $this->language);
+        $this->app->set('currentPage', $this->page);
     }
 
     /**
-     * Detect if this is an API request
+     * Extract language from URL
      */
-    private function detectApiRequest(): void
+    private function extractLanguage()
     {
-        $this->isApiRequest = strpos($this->path, 'api/') === 0;
+        $parts = explode('/', $this->url);
+        $firstPart = $parts[0] ?? '';
         
-        if ($this->isApiRequest) {
-            // Extract API version if present
-            if (preg_match('/^api\/(v\d+)\//', $this->path, $matches)) {
+        if (in_array($firstPart, $this->languages)) {
+            $this->language = $firstPart;
+            // Remove language from URL
+            array_shift($parts);
+            $this->url = implode('/', $parts);
+        }
+    }
+
+    /**
+     * Extract pagination from URL (e.g., /products/page/2)
+     */
+    private function extractPagination()
+    {
+        if (preg_match('/\/page\/(\d+)/', $this->url, $matches)) {
+            $this->page = (int)$matches[1];
+            $this->url = str_replace('/page/' . $matches[1], '', $this->url);
+        }
+    }
+
+    /**
+     * Check if this is an API request
+     */
+    private function checkApiRequest()
+    {
+        if (strpos($this->url, 'api/') === 0) {
+            $this->isApi = true;
+            $this->areaName = 'api';
+            
+            // Check for API version
+            if (preg_match('/^api\/(v\d+)\//', $this->url, $matches)) {
                 $this->apiVersion = $matches[1];
-                $this->path = preg_replace('/^api\/v\d+\//', '', $this->path);
+                $this->url = preg_replace('/^api\/v\d+\//', '', $this->url);
             } else {
-                $this->path = preg_replace('/^api\//', '', $this->path);
+                $this->url = substr($this->url, 4); // Remove 'api/'
             }
-            
-            $this->area = 'api';
         }
     }
 
     /**
-     * Extract pagination information
+     * Check if this is an admin request
      */
-    private function extractPaginationInfo(): void
+    private function checkAdminRequest()
     {
-        $uris = $this->path ? explode("/", $this->path) : [];
-        
-        foreach ($uris as $key => $value) {
-            if ($value === 'page' && isset($uris[$key + 1])) {
-                $this->c_p_index = (int)$uris[$key + 1];
-                $this->path = str_replace('/page/' . $uris[$key + 1], '', $this->path);
-                break;
-            }
+        if (strpos($this->url, 'admin/') === 0) {
+            $this->isAdmin = true;
+            $this->areaName = 'admin';
+            $this->url = substr($this->url, 6); // Remove 'admin/'
         }
-        
-        $this->registry->set('c_p_index', $this->c_p_index);
     }
 
     /**
-     * Resolve the current route
+     * Find the matching route
      */
-    private function resolveRoute(): void
+    private function findRoute()
     {
-        // Try module routes first
-        if ($this->resolveModuleRoute()) {
+        // Try custom routes first
+        if ($this->matchCustomRoute()) {
             return;
         }
         
-        // Try SEO URL resolution
-        if ($this->resolveSeoRoute()) {
+        // Try module routes
+        if ($this->matchModuleRoute()) {
             return;
         }
         
-        // Try custom route patterns
-        if ($this->resolvePatternRoute()) {
+        // Try SEO routes
+        if ($this->matchSeoRoute()) {
             return;
         }
         
-        // Default controller/action resolution
-        $this->resolveDefaultRoute();
+        // Default route matching
+        $this->matchDefaultRoute();
     }
 
     /**
-     * Resolve module-based routes
+     * Match custom defined routes
      */
-    private function resolveModuleRoute(): bool
+    private function matchCustomRoute()
     {
-        $parts = explode('/', $this->path);
-        
-        // Check for admin area
-        if (isset($parts[0]) && $parts[0] === 'admin') {
-            $this->area = 'admin';
-            $this->module = $parts[1] ?? 'Home';
-            $this->controller = $parts[2] ?? 'index';
-            $this->action = $parts[3] ?? 'index';
-            
-            $this->file = $this->buildModulePath('admin', $this->module, $this->controller);
-            return file_exists($this->file);
-        }
-        
-        // Check for app modules
-        if (isset($parts[0]) && $this->isAppModule($parts[0])) {
-            $this->area = 'app';
-            $this->module = ucfirst($parts[0]);
-            $this->controller = $parts[1] ?? 'index';
-            $this->action = $parts[2] ?? 'index';
-            
-            $this->file = $this->buildModulePath('app', $this->module, $this->controller);
-            return file_exists($this->file);
-        }
-        
-        return false;
-    }
-
-    /**
-     * Resolve SEO-friendly URLs
-     */
-    private function resolveSeoRoute(): bool
-    {
-        if (empty($this->path)) {
-            return false;
-        }
-
-        // Handle admin area
-        if ($this->path === 'admin') {
-            $this->area = 'admin';
-            $this->controller = $_GET['controller'] ?? 'dashboard';
-            $this->action = 'index';
-            return true;
-        }
-
-        // Skip AJAX requests
-        if ($this->isAjaxRequest()) {
-            return false;
-        }
-
-        // Check banners
-        $banners = $this->getAllBanners();
-        if (isset($banners[$this->path])) {
-            $this->registry->set('banners', $banners[$this->path]);
-        }
-
-        // Process URL segments for aliases
-        $resolvedPath = $this->processUrlSegments($this->path);
-        
-        if ($resolvedPath !== $this->path) {
-            $parts = explode('/', $resolvedPath);
-            $this->controller = $parts[0] ?? 'home';
-            $this->action = isset($parts[1]) ? str_replace('-', '_', $parts[1]) : 'index';
-            return true;
-        }
-
-        return false;
-    }
-
-    /**
-     * Process URL segments for alias resolution
-     */
-    private function processUrlSegments(string $alias): string
-    {
-        $resolvedSegments = '';
-        $parts = explode('/', $alias);
-        
-        foreach ($parts as $part) {
-            $query = $this->db->query(
-                "SELECT slog_id, url, slog FROM aliases WHERE url = '" . 
-                $this->db->escape($part) . "' LIMIT 1"
-            );
-            
-            if ($query->num_rows > 0) {
-                $hash = empty($resolvedSegments) ? '/' : '';
-                $resolvedSegments = $query->row['slog'] . $hash;
-                $this->registry->set('slug_data', $query->row);
-            }
-        }
-        
-        if (!empty($resolvedSegments)) {
-            return $resolvedSegments;
-        }
-        
-        // Fallback: use first segment as controller
-        if (count($parts) > 0) {
-            $routeData = [
-                'slug' => $parts[0],
-                'query' => $parts[1] ?? null
-            ];
-            $this->registry->set('slug_data', $routeData);
-        }
-        
-        return $alias;
-    }
-
-    /**
-     * Resolve pattern-based routes
-     */
-    private function resolvePatternRoute(): bool
-    {
-        foreach ($this->routePatterns as $pattern => $route) {
-            if (preg_match($pattern, $this->path, $matches)) {
-                $this->controller = $route['controller'];
-                $this->action = $route['action'];
-                $this->args = array_slice($matches, 1);
+        foreach ($this->routes as $pattern => $route) {
+            if (preg_match($pattern, $this->url, $matches)) {
+                $this->controllerName = $route['controller'];
+                $this->actionName = $route['action'];
+                $this->params = array_slice($matches, 1);
                 return true;
             }
         }
+        return false;
+    }
+
+    /**
+     * Match module-based routes
+     */
+    private function matchModuleRoute()
+    {
+        $parts = explode('/', $this->url);
+        
+        // Check if first part is a module
+        $moduleName = $parts[0] ?? '';
+        if ($this->moduleExists($moduleName)) {
+            $this->moduleName = ucfirst($moduleName);
+            $this->controllerName = $parts[1] ?? 'home';
+            $this->actionName = $parts[2] ?? 'index';
+            $this->params = array_slice($parts, 3);
+            return true;
+        }
         
         return false;
     }
 
     /**
-     * Default route resolution
+     * Match SEO-friendly routes from database
      */
-    private function resolveDefaultRoute(): void
+    private function matchSeoRoute()
     {
-        $parts = explode('/', $this->path);
-        
-        $this->controller = !empty($parts[0]) ? $parts[0] : 'home';
-        $this->action = isset($parts[1]) ? str_replace('-', '_', $parts[1]) : 'index';
-        $this->args = array_slice($parts, 2);
-        
-        // Set default file path
-        if (empty($this->file)) {
-            $this->file = $this->buildControllerPath($this->controller);
+        if (empty($this->url)) {
+            return false;
         }
         
-        $this->registry->set('bodyclass', $this->path);
+        // Skip AJAX requests
+        if ($this->isAjax()) {
+            return false;
+        }
+        
+        // Look up URL alias in database
+        $route = $this->lookupSeoRoute($this->url);
+        if ($route) {
+            $this->controllerName = $route['controller'];
+            $this->actionName = $route['action'];
+            $this->params = $route['params'] ?? [];
+            return true;
+        }
+        
+        return false;
+    }
+
+    /**
+     * Default route matching (controller/action/params)
+     */
+    private function matchDefaultRoute()
+    {
+        $parts = explode('/', $this->url);
+        
+        $this->controllerName = !empty($parts[0]) ? $parts[0] : 'home';
+        $this->actionName = !empty($parts[1]) ? $parts[1] : 'index';
+        $this->params = array_slice($parts, 2);
+        
+        // Replace dashes with underscores for action names
+        $this->actionName = str_replace('-', '_', $this->actionName);
     }
 
     /**
      * Run middleware stack
      */
-    private function runMiddleware(): void
+    private function runMiddleware()
     {
-        foreach ($this->middlewareStack as $middlewareClass) {
-            $middleware = new $middlewareClass($this->registry);
-            
+        foreach ($this->middleware as $middlewareClass) {
+            $middleware = new $middlewareClass($this->app);
             if (!$middleware->handle()) {
-                throw new Exception("Middleware {$middlewareClass} blocked request");
+                throw new Exception("Middleware {$middlewareClass} blocked the request");
             }
         }
     }
 
     /**
-     * Load the appropriate controller
+     * Load the controller file
      */
-    private function loadController(): void
+    private function loadController()
     {
-        // Check if file exists
-        if (!is_readable($this->file)) {
+        $this->controllerFile = $this->getControllerPath();
+        
+        if (!file_exists($this->controllerFile)) {
             $this->handleNotFound();
             return;
         }
-
-        require_once($this->file);
         
-        // Clean controller name
-        $this->controller = str_replace(['-', '_', '&'], '', $this->controller);
+        require_once $this->controllerFile;
         
-        // Build class name
-        $className = $this->buildControllerClassName();
-        
+        $className = $this->getControllerClass();
         if (!class_exists($className)) {
             throw new Exception("Controller class {$className} not found");
         }
         
-        $this->controllerInstance = new $className($this->registry);
+        $this->controller = new $className($this->app);
     }
 
     /**
-     * Execute the controller action
+     * Call the controller action
      */
-    private function executeAction(): void
+    private function callAction()
     {
-        if (!is_callable([$this->controllerInstance, $this->action])) {
-            $this->action = 'index';
+        // Check if action exists
+        if (!method_exists($this->controller, $this->actionName)) {
+            $this->actionName = 'index';
         }
         
-        // Log the route execution
-        $this->logger->info("Executing route: {$this->controller}::{$this->action}", [
-            'module' => $this->module,
-            'area' => $this->area,
-            'args' => $this->args
-        ]);
+        // Log the execution
+        $this->logger->info("Executing: {$this->controllerName}::{$this->actionName}");
         
-        // Execute with error handling
-        try {
-            call_user_func_array(
-                [$this->controllerInstance, $this->action], 
-                $this->args
-            );
-        } catch (Exception $e) {
-            $this->handleControllerError($e);
-        }
+        // Call the action with parameters
+        call_user_func_array(
+            [$this->controller, $this->actionName], 
+            $this->params
+        );
     }
 
     /**
-     * Build controller file path
+     * Get the full path to controller file
      */
-    private function buildControllerPath(string $controller): string
+    private function getControllerPath()
     {
-        if ($this->isApiRequest) {
-            return DIR_APP . "modules/api/Controllers/{$controller}.php";
+        $basePath = $this->getBasePath();
+        $fileName = ucfirst($this->controllerName) . 'Controller.php';
+        return $basePath . '/' . $fileName;
+    }
+
+    /**
+     * Get the base path for controllers
+     */
+    private function getBasePath()
+    {
+        if ($this->isApi) {
+            return 'modules/api/Controllers';
         }
         
-        return DIR_APP . "controller/{$controller}.php";
+        if ($this->isAdmin) {
+            return 'modules/admin/Controllers';
+        }
+        
+        if ($this->moduleName) {
+            return "modules/app/{$this->moduleName}/Controllers";
+        }
+        
+        return 'controllers';
     }
 
     /**
-     * Build module file path
+     * Get the controller class name
      */
-    private function buildModulePath(string $area, string $module, string $controller): string
-    {
-        return DIR_APP . "modules/{$area}/{$module}/Controllers/{$controller}.php";
-    }
-
-    /**
-     * Build controller class name
-     */
-    private function buildControllerClassName(): string
+    private function getControllerClass()
     {
         $prefix = '';
-        
-        if ($this->isApiRequest) {
+        if ($this->isApi) {
             $prefix = 'Api';
-        } elseif ($this->area === 'admin') {
+        } elseif ($this->isAdmin) {
             $prefix = 'Admin';
         }
         
-        return $prefix . 'Controller' . ucfirst($this->controller);
+        return $prefix . ucfirst($this->controllerName) . 'Controller';
     }
 
     /**
-     * Load module routes
+     * Check if a module exists
      */
-    private function loadModuleRoutes(): void
+    private function moduleExists($moduleName)
     {
-        $modulesPaths = [
-            DIR_APP . 'modules/admin/',
-            DIR_APP . 'modules/app/',
-            DIR_APP . 'modules/api/'
+        $area = $this->isAdmin ? 'admin' : 'app';
+        $path = "modules/{$area}/" . ucfirst($moduleName);
+        return is_dir($path);
+    }
+
+    /**
+     * Look up SEO route in database
+     */
+    private function lookupSeoRoute($url)
+    {
+        $query = $this->db->query(
+            "SELECT controller, action, params FROM seo_routes 
+             WHERE url = '" . $this->db->escape($url) . "' 
+             LIMIT 1"
+        );
+        
+        if ($query->num_rows > 0) {
+            $row = $query->row;
+            return [
+                'controller' => $row['controller'],
+                'action' => $row['action'],
+                'params' => json_decode($row['params'] ?? '[]', true)
+            ];
+        }
+        
+        return null;
+    }
+
+    /**
+     * Check if request is AJAX
+     */
+    private function isAjax()
+    {
+        return isset($_SERVER['HTTP_X_REQUESTED_WITH']) 
+               && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+    }
+
+    /**
+     * Load routes from files
+     */
+    private function loadRoutes()
+    {
+        $routeFiles = [
+            'config/routes.php',
+            'modules/api/routes.php',
+            'modules/admin/routes.php'
         ];
         
-        foreach ($modulesPaths as $modulePath) {
-            if (is_dir($modulePath)) {
-                $modules = scandir($modulePath);
-                foreach ($modules as $module) {
-                    if ($module !== '.' && $module !== '..' && is_dir($modulePath . $module)) {
-                        $routeFile = $modulePath . $module . '/routes.php';
-                        if (file_exists($routeFile)) {
-                            $routes = require $routeFile;
-                            if (is_array($routes)) {
-                                $this->moduleRoutes[$module] = $routes;
-                            }
-                        }
-                    }
+        foreach ($routeFiles as $file) {
+            if (file_exists($file)) {
+                $routes = require $file;
+                if (is_array($routes)) {
+                    $this->routes = array_merge($this->routes, $routes);
                 }
             }
         }
     }
 
     /**
-     * Initialize default routes and patterns
+     * Setup default routes and settings
      */
-    private function initializeRoutes(): void
+    private function setupDefaults()
     {
         // Add common route patterns
-        $this->addRoutePattern('/^products\/(\d+)$/', [
+        $this->addRoute('/^product\/(\d+)$/', [
             'controller' => 'product',
             'action' => 'view'
         ]);
         
-        $this->addRoutePattern('/^category\/([^\/]+)\/page\/(\d+)$/', [
+        $this->addRoute('/^category\/([^\/]+)$/', [
             'controller' => 'category',
             'action' => 'index'
         ]);
         
-        // Add API routes
-        if ($this->isApiRequest) {
-            $this->addApiRoutes();
+        // Add API routes if needed
+        if ($this->isApi) {
+            $this->addRoute('/^users\/(\d+)$/', [
+                'controller' => 'user',
+                'action' => 'show'
+            ]);
         }
-    }
-
-    /**
-     * Add API-specific routes
-     */
-    private function addApiRoutes(): void
-    {
-        $this->addRoutePattern('/^users\/(\d+)$/', [
-            'controller' => 'user',
-            'action' => 'show'
-        ]);
-        
-        $this->addRoutePattern('/^auth\/login$/', [
-            'controller' => 'auth',
-            'action' => 'login'
-        ]);
     }
 
     /**
      * Add a route pattern
      */
-    public function addRoutePattern(string $pattern, array $route): void
+    public function addRoute($pattern, $route)
     {
-        $this->routePatterns[$pattern] = $route;
+        $this->routes[$pattern] = $route;
     }
 
     /**
-     * Add middleware to stack
+     * Add middleware
      */
-    public function addMiddleware(string $middlewareClass): void
+    public function addMiddleware($middlewareClass)
     {
-        $this->middlewareStack[] = $middlewareClass;
+        $this->middleware[] = $middlewareClass;
     }
 
     /**
-     * Get all banners for SEO
+     * Handle 404 not found
      */
-    private function getAllBanners(): array
+    private function handleNotFound()
     {
-        $cacheKey = "banners_lang_{$this->config->get('config_language_id')}";
-        
-        if ($cached = $this->cache->get($cacheKey)) {
-            return $cached;
+        if ($this->isApi) {
+            http_response_code(404);
+            echo json_encode(['error' => 'Endpoint not found']);
+            exit;
         }
         
-        $routes = [];
-        $sql = "SELECT b.*, bd.* FROM banner b 
-                LEFT JOIN banner_description bd ON bd.banner_id = b.banner_id 
-                WHERE b.status = 1 AND bd.lang_id = '" . 
-                $this->config->get('config_language_id') . "'";
-        
-        $result = $this->db->query($sql);
-        
-        foreach ($result->rows as $row) {
-            $routes[$row['url']] = [
-                'meta_title' => $row['meta_title'] ?: '',
-                'meta_keyword' => $row['meta_keyword'] ?: '',
-                'meta_description' => $row['meta_description'] ?: $row['description'],
-                'banner' => $row['image'] ?: '',
-                'description' => $row['description'] ?: '',
-                'title' => $row['title'] ?: '',
-            ];
-        }
-        
-        $this->cache->set($cacheKey, $routes, 3600); // Cache for 1 hour
-        
-        return $routes;
-    }
-
-    /**
-     * Check if module exists in app area
-     */
-    private function isAppModule(string $module): bool
-    {
-        return is_dir(DIR_APP . "modules/app/" . ucfirst($module));
-    }
-
-    /**
-     * Check if request is AJAX
-     */
-    private function isAjaxRequest(): bool
-    {
-        return isset($_SERVER['HTTP_X_REQUESTED_WITH']) && 
-               strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
-    }
-
-    /**
-     * Handle 404 errors
-     */
-    private function handleNotFound(): void
-    {
-        if ($this->isApiRequest) {
-            $response = new ApiResponse();
-            $response->error(404, 'Endpoint not found');
-            return;
-        }
-        
-        $this->file = DIR_APP . 'controller/error404.php';
-        $this->controller = 'error404';
-        $this->action = 'index';
+        $this->controllerFile = 'controllers/ErrorController.php';
+        $this->controllerName = 'error';
+        $this->actionName = 'notFound';
     }
 
     /**
      * Handle routing errors
      */
-    private function handleRoutingError(Exception $e): void
+    private function handleError($e)
     {
-        $this->logger->error('Routing Error: ' . $e->getMessage(), [
-            'file' => $e->getFile(),
-            'line' => $e->getLine(),
-            'trace' => $e->getTraceAsString()
-        ]);
+        $this->logger->error('Router Error: ' . $e->getMessage());
         
-        if ($this->isApiRequest) {
-            $response = new ApiResponse();
-            $response->error(500, 'Internal routing error');
-        } else {
-            $this->handleNotFound();
+        if ($this->isApi) {
+            http_response_code(500);
+            echo json_encode(['error' => 'Internal server error']);
+            exit;
         }
+        
+        // Show error page
+        $this->handleNotFound();
     }
 
     /**
-     * Handle controller execution errors
+     * Get current route info
      */
-    private function handleControllerError(Exception $e): void
-    {
-        $this->logger->error('Controller Error: ' . $e->getMessage(), [
-            'controller' => $this->controller,
-            'action' => $this->action,
-            'file' => $e->getFile(),
-            'line' => $e->getLine()
-        ]);
-        
-        if ($this->isApiRequest) {
-            $response = new ApiResponse();
-            $response->error(500, 'Controller execution error');
-        } else {
-            throw $e; // Re-throw for global error handler
-        }
-    }
-
-    /**
-     * Get current route information
-     */
-    public function getCurrentRoute(): array
+    public function getCurrentRoute()
     {
         return [
-            'controller' => $this->controller,
-            'action' => $this->action,
-            'module' => $this->module,
-            'area' => $this->area,
-            'args' => $this->args,
-            'language' => $this->currentLanguage,
-            'is_api' => $this->isApiRequest,
-            'api_version' => $this->apiVersion
+            'controller' => $this->controllerName,
+            'action' => $this->actionName,
+            'module' => $this->moduleName,
+            'area' => $this->areaName,
+            'params' => $this->params,
+            'language' => $this->language,
+            'page' => $this->page,
+            'is_api' => $this->isApi,
+            'is_admin' => $this->isAdmin
         ];
     }
 
     /**
-     * Generate URL from route
+     * Generate URL
      */
-    public function url(string $route, array $params = []): string
+    public function url($route, $params = [])
     {
-        // Implementation for URL generation
-        $url = '/' . $this->currentLanguage . '/' . ltrim($route, '/');
+        $url = '/' . $this->language . '/' . ltrim($route, '/');
         
         if (!empty($params)) {
             $url .= '?' . http_build_query($params);
@@ -670,4 +531,37 @@ final class Router
         
         return $url;
     }
+
+    /**
+     * Get controller name
+     */
+    public function getController()
+    {
+        return $this->controllerName;
+    }
+
+    /**
+     * Get action name  
+     */
+    public function getAction()
+    {
+        return $this->actionName;
+    }
+
+    /**
+     * Get parameters
+     */
+    public function getParams()
+    {
+        return $this->params;
+    }
+}
+
+protected class chunk2 extends Router
+{
+
+}
+protected class chunk3 extends Router
+{
+
 }

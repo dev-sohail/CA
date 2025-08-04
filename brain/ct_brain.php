@@ -1,607 +1,508 @@
 <?php
-###########################################################
-#    CyberTirah Custom Framework Based Web Application   #
-###########################################################
 
 /**
- * Bootstrap Script
- * 
- * Responsibilities:
- * - Load environment variables
- * - Set application constants
- * - Initialize sessions and PHP settings
- * - Define directory paths
- * - Load core framework and utility classes
- * - Initialize registry and services
- * - Load settings from DB or cache
- * - Setup global error and shutdown handlers
- * 
- * @version 1.1.0
- * @author CyberTirah
+ * Enhanced Bootstrap Script - Production Ready Version
+ * * Features:
+ * - Comprehensive environment validation
+ * - Advanced security headers and CSRF protection
+ * - Starup Configuration stored in .env
+ * - OOPs to faster its work
+ * - Performance monitoring and optimization
+ * - Dependency injection container
+ * - Configuration management with validation
+ * - Classes Autoload with APCu cache machenism
+ * - Startup Global Logger & Debuger & Cache
+ * - Registry core class to avoid namespaces or manualy load of class
+ * - Session security enhancements
+ * - Memory and execution time optimization
+ *
+ * @version 1.4.0
+ * @author CyberTirah Development Team
+ * @license MIT
+ * @since PHP 8.0+
  */
 
-// Prevent direct access
-if (!defined('FRAMEWORK_ENTRY')) {
-    define('FRAMEWORK_ENTRY', true);
-}
-
-// Define root path
-if (!defined('ROOT')) {
-    define('ROOT', dirname(__DIR__));
-}
-
-/**
- * 1. Environment Variables Loader
- */
-function loadEnvironmentVariables(): void
+// A simple utility class to handle .env file loading.
+// This makes configuration management much more automated.
+class Configurations
 {
-    $envFile = ROOT . '/.env';
+    private array $config = [];
 
-    if (!file_exists($envFile)) {
-        http_response_code(500);
-        echo '<div style="text-align:center; font-family:Arial,sans-serif; margin-top:50px;">';
-        echo '<h1 style="color:#e74c3c;"><code>.env file not found</code></h1>';
-        echo '<p>Please create a .env file in the root directory.</p>';
-        echo '<a href="https://docs.cybertirah.com/env-setup" style="color:#3498db;">See Documentation</a>';
-        echo '</div>';
-        exit(1);
-    }
-
-    $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-
-    foreach ($lines as $line) {
-        $line = trim($line);
-
-        // Skip comments and empty lines
-        if (empty($line) || strpos($line, '#') === 0) {
-            continue;
-        }
-
-        // Parse key=value pairs
-        if (strpos($line, '=') !== false) {
-            [$key, $value] = explode('=', $line, 2);
-            $_ENV[trim($key)] = trim($value, '"\'');
+    public function __construct(string $envFile = ROOT . '/.env')
+    {
+        $this->phpversion();
+        if (file_exists($envFile)) {
+            $this->loadEnv($envFile);
+            error_log(".env file Loaded Successfully");
+        } else {
+            // Log an error if the .env file is missing, but don't stop execution.
+            var_dump(file_exists($envFile));
+            exit('<center style="margin-top: 8rem; color: red;">' . ".env file not found at:" . '</br>' . $envFile . '</br>' . " Using default values." . '</center>');
         }
     }
-}
 
-loadEnvironmentVariables();
-
-/**
- * 2. Application Constants
- */
-define('APP_INSTANCE', 'Y');
-define('ADMIN_PANEL', 'N');
-define('VERSION', '1.0.0');
-define('APP_START_TIME', microtime(true));
-define('SITE_ICON', $_ENV['SITE_ICON'] ?? '/favicon.ico');
-
-// Timezone setup
-date_default_timezone_set($_ENV['APP_TIMEZONE'] ?? 'UTC');
-
-// CORS Headers
-if (!headers_sent()) {
-    header('Access-Control-Allow-Origin: ' . ($_ENV['CORS_ORIGIN'] ?? '*'));
-    header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
-    header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
-
-    if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
-        http_response_code(200);
-        exit();
-    }
-}
-
-/**
- * 3. Session Configuration
- */
-function initializeSession(): void
-{
-    $forceHttps = filter_var($_ENV['FORCE_HTTPS'] ?? false, FILTER_VALIDATE_BOOLEAN);
-    $isHttps = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off';
-
-    session_set_cookie_params([
-        'lifetime' => (int)($_ENV['SESSION_LIFETIME'] ?? 0),
-        'path'     => $_ENV['SESSION_PATH'] ?? '/',
-        'domain'   => $_ENV['SESSION_DOMAIN'] ?? '',
-        'secure'   => $forceHttps && $isHttps,
-        'httponly' => true,
-        'samesite' => $_ENV['SESSION_SAMESITE'] ?? 'Strict'
-    ]);
-
-    session_name($_ENV['SESSION_NAME'] ?? 'CAFSESSID');
-
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-}
-
-initializeSession();
-
-/**
- * 4. PHP Configuration
- */
-function configurePHP(): void
-{
-    // Version check
-    if (version_compare(PHP_VERSION, '7.4', '<')) {
-        http_response_code(500);
-        exit('This application requires PHP 7.4 or higher. Current version: ' . PHP_VERSION);
-    }
-
-    $devMode = filter_var($_ENV['DEV_MODE'] ?? true, FILTER_VALIDATE_BOOLEAN);
-
-    // Error reporting
-    if ($devMode) {
-        error_reporting(E_ALL & ~E_NOTICE & ~E_DEPRECATED);
-        ini_set('display_errors', '1');
-    } else {
-        error_reporting(0);
-        ini_set('display_errors', '0');
-    }
-
-    ini_set('log_errors', '1');
-    ini_set('memory_limit', $_ENV['MEMORY_LIMIT'] ?? '256M');
-    set_time_limit((int)($_ENV['TIME_LIMIT'] ?? 300));
-
-    // Additional PHP settings
-    ini_set('max_execution_time', $_ENV['MAX_EXECUTION_TIME'] ?? '300');
-    ini_set('max_input_time', $_ENV['MAX_INPUT_TIME'] ?? '300');
-    ini_set('post_max_size', $_ENV['POST_MAX_SIZE'] ?? '50M');
-    ini_set('upload_max_filesize', $_ENV['UPLOAD_MAX_FILESIZE'] ?? '50M');
-}
-
-configurePHP();
-
-/**
- * 5. Directory Path Constants
- */
-define('HTTP_HOST', $_SERVER['HTTP_HOST'] ?? 'localhost');
-define('HTTPS_HOST', $_SERVER['HTTP_HOST'] ?? 'localhost');
-define('REQUEST_SCHEME', $_SERVER['REQUEST_SCHEME'] ?? 'http');
-
-
-// CORE directories
-define('DIR_CONFIG', ROOT . '/brain');
-define('DIR_MODULES', ROOT . '/modules');
-define('DIR_STORAGE', ROOT . '/storage');
-define('DIR_CLASSES', DIR_CONFIG . '/classes');
-define('DIR_CORE', DIR_CONFIG . '/core');
-define('DIR_CONFIG_CONTROLLERS', DIR_CONFIG . '/controllers');
-define('DIR_CONFIG_MODELS', DIR_CONFIG . '/models');
-define('DIR_CONFIG_VIEWS', DIR_CONFIG . '/views');
-define('DIR_CONFIG_MIDDLEWARE', DIR_CONFIG . '/middleware');
-
-
-// ROLES directories
-define('DIR_APP', DIR_MODULES . '/app');
-define('DIR_ADMIN', DIR_MODULES . '/admin');
-define('DIR_AI', DIR_MODULES . '/ai');
-define('DIR_API', DIR_MODULES . '/api');
-
-
-// Public and storage directories
-define('DIR_CSS', DIR_STORAGE . '/css');
-define('DIR_JS', DIR_STORAGE . '/js');
-define('DIR_UPLOADS', DIR_STORAGE . '/uploads');
-define('DIR_CACHE', DIR_STORAGE . '/cache');
-define('DIR_AUTOMATE', DIR_STORAGE . '/automate');
-define('DIR_SCRIPTS', DIR_AUTOMATE . '/scripts');
-define('DIR_LOGS', DIR_STORAGE . '/logs');
-// Language and configuration
-define('DIR_LANGUAGES', DIR_STORAGE . '/lang');
-
-
-/**
- * 6. Database Configuration
- */
-define('DB_DRIVER', $_ENV['DB_DRIVER'] ?? 'mysql');
-define('DB_HOST', $_ENV['DB_HOST'] ?? 'localhost');
-define('DB_PORT', $_ENV['DB_PORT'] ?? '3306');
-define('DB_USERNAME', $_ENV['DB_USERNAME'] ?? 'root');
-define('DB_PASSWORD', $_ENV['DB_PASSWORD'] ?? '');
-define('DB_DATABASE', $_ENV['DB_DATABASE'] ?? 'ct_frame');
-define('DB_PREFIX', $_ENV['DB_PREFIX'] ?? '');
-define('DB_CHARSET', $_ENV['DB_CHARSET'] ?? 'utf8mb4');
-define('DB_COLLATION', $_ENV['DB_COLLATION'] ?? 'utf8mb4_unicode_ci');
-
-/**
- * 7. Mail Configuration
- */
-define('MAIL_DRIVER', $_ENV['MAIL_DRIVER'] ?? 'smtp');
-define('MAIL_HOST', $_ENV['MAIL_HOST'] ?? 'localhost');
-define('MAIL_PORT', $_ENV['MAIL_PORT'] ?? '587');
-define('MAIL_USERNAME', $_ENV['MAIL_USERNAME'] ?? '');
-define('MAIL_PASSWORD', $_ENV['MAIL_PASSWORD'] ?? '');
-define('MAIL_ENCRYPTION', $_ENV['MAIL_ENCRYPTION'] ?? 'tls');
-define('MAIL_FROM_ADDRESS', $_ENV['MAIL_FROM_ADDRESS'] ?? 'noreply@example.com');
-define('MAIL_FROM_NAME', $_ENV['MAIL_FROM_NAME'] ?? 'CyberTirah Framework');
-
-/**
- * 8. Safe File Inclusion Helper
- */
-function safeRequire(string $file, bool $required = true): bool
-{
-    if (!file_exists($file)) {
-        if ($required) {
-            $error = "Critical file not found: $file";
-            error_log($error);
+    private function phpversion()
+    {
+        // Version check
+        if (version_compare(PHP_VERSION, '8.0', '<')) {
             http_response_code(500);
-            die("Framework Error: Missing required file.");
+            exit('<center style="margin-top: 8rem;">This application requires at least PHP 8.0 or higher. Current version: ' . PHP_VERSION . '</center>');
+        }
+    }
+
+    private function loadEnv(string $file): void
+    {
+        $lines = file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($lines as $line) {
+            // Skip comments
+            if (strpos(trim($line), '#') === 0) {
+                continue;
+            }
+
+            [$key, $value] = explode('=', $line, 2);
+            $key = trim($key);
+            $value = trim($value);
+
+            // Strip quotes from the value
+            if (str_starts_with($value, '"') && str_ends_with($value, '"')) {
+                $value = substr($value, 1, -1);
+            }
+
+            $this->config[$key] = $value;
+            // Set it in the global $_ENV for a traditional approach.
+            $_ENV[$key] = $value;
+        }
+    }
+
+    public function get(string $key, $default = null)
+    {
+        return $this->config[$key] ?? $default;
+    }
+}
+
+class chunk1 extends Configurations
+{
+    /** @var float Stores the start time of the application for performance tracking. */
+    private float $startTime;
+
+    /** @var bool Flag to prevent multiple initializations. */
+    private bool $isInitialized = false;
+
+    /** @var array Stores the directory paths for the framework. */
+    private array $paths = [];
+
+    /** @var array Stores database configuration settings. */
+    private array $dbConfig = [];
+
+    /** @var array Stores email configuration settings. */
+    private array $mailConfig = [];
+
+    /** @var array Tracks loaded class files. */
+    private array $loadedClasses = [];
+
+    /** @var array Defines the core framework files to be loaded. */
+    private array $coreFiles = [];
+
+    /** @var Configurations The configuration object for handling .env variables. */
+    private Configurations $config;
+
+    /**
+     * chunk1 constructor.
+     * @param Configurations $config The configuration object.
+     */
+    private function __construct(Configurations $config)
+    {
+        $this->startTime = microtime(true);
+        $this->config = $config;
+        $this->initialize();
+    }
+
+    /**
+     * The main entry point for the framework bootstrap.
+     * This static method orchestrates the entire initialization process.
+     */
+    public static function boot(): self
+    {
+        // Define ROOT path and application start time early.
+        if (!defined('ROOT')) {
+            define('ROOT', dirname(__DIR__));
+        }
+        if (!defined('APP_START_TIME')) {
+            define('APP_START_TIME', microtime(true));
+        }
+
+        // Automatically load environment variables from the .env file.
+        $config = new Configurations();
+
+        // Return a new instance of the class.
+        $instance = new self($config);
+
+        // Register a PSR-4 compliant autoloader.
+        spl_autoload_register(function ($className) use ($instance) {
+            $instance->loadUtilityClass($className);
+        });
+
+        // Load the core framework files.
+        try {
+            $instance->loadCoreFiles();
+            // $registry = new Registry();
+        } catch (RuntimeException $e) {
+            error_log("Failed to load critical core files: " . $e->getMessage());
+            exit('<center style="margin-top: 8rem; color: red;">' . "Critical framework files failed to load. Please check the logs." . '</center>');
+        }
+
+        return $instance;
+    }
+
+    /**
+     * Initializes the framework by calling a series of setup methods.
+     * This is the main entry point for the bootstrap logic in this chunk.
+     */
+    private function initialize(): void
+    {
+        if ($this->isInitialized) {
+            return;
+        }
+
+        $this->preventDirectAccess();
+        $this->initializePaths();
+        $this->initializeConfigurations();
+        $this->defineApplicationConstants();
+        $this->initializeSession();
+        $this->configurePHP();
+        $this->defineCoreFiles();
+
+        $this->isInitialized = true;
+    }
+
+    /**
+     * Prevents the script from being accessed directly by checking a predefined constant.
+     */
+    private function preventDirectAccess(): void
+    {
+        if (!defined('FRAMEWORK_ENTRY')) {
+            define('FRAMEWORK_ENTRY', true);
+        }
+    }
+
+    /**
+     * Initializes all directory path constants for the framework.
+     */
+    private function initializePaths(): void
+    {
+        $dirs = ['brain', 'modules', 'storage'];
+
+        foreach ($dirs as $dir) {
+            $constName = 'DIR_' . strtoupper($dir);
+            $bapaths = ROOT . DIRECTORY_SEPARATOR . $dir;
+
+            if (!defined($constName)) {
+                define($constName, $bapaths);
+                $this->paths[$constName] = $bapaths;
+            }
+        }
+
+        foreach ($dirs as $dir) {
+            $basePath = ROOT . DIRECTORY_SEPARATOR . $dir;
+
+            if (!is_dir($basePath)) {
+                continue;
+            }
+
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($basePath, FilesystemIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::SELF_FIRST
+            );
+
+            foreach ($iterator as $dirItem) {
+                if (!$dirItem->isDir()) continue;
+
+                $realPath = $dirItem->getRealPath();
+                if (!$realPath) continue;
+
+                $const = 'DIR_' . strtoupper(
+                    str_replace([ROOT . DIRECTORY_SEPARATOR, '/', '\\'], ['', '_', '_'], $realPath)
+                );
+
+                // // Get path relative to ROOT
+                // $relativePath = str_replace(ROOT . DIRECTORY_SEPARATOR, '', $realPath);
+                // $relativePathParts = preg_split('~[\\/\\\\]+~', $relativePath);
+
+                // // Use only the last folder name for constant
+                // $shortName = strtoupper(end($relativePathParts));
+                // $const = 'DIR_' . $shortName;
+
+                if (!defined($const)) {
+                    define($const, $realPath);
+                    $this->paths[$const] = $realPath;
+                }
+            }
+        }
+
+        // Save to JSON file
+        file_put_contents(
+            DIR_STORAGE_CACHE . '/paths.json',
+            json_encode($this->paths, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+
+    /**
+     * Initializes database and mail configurations from the new Configuration class.
+     */
+    private function initializeConfigurations(): void
+    {
+        // Database Configuration
+        $this->dbConfig = [
+            'DB_DRIVER' => $this->config->get('DB_DRIVER', 'mysql'),
+            'DB_HOST' => $this->config->get('DB_HOST', 'localhost'),
+            'DB_PORT' => $this->config->get('DB_PORT', '3306'),
+            'DB_USERNAME' => $this->config->get('DB_USERNAME', 'root'),
+            'DB_PASSWORD' => $this->config->get('DB_PASSWORD', ''),
+            'DB_DATABASE' => $this->config->get('DB_DATABASE', 'ct_frame'),
+            'DB_PREFIX' => $this->config->get('DB_PREFIX', ''),
+            'DB_CHARSET' => $this->config->get('DB_CHARSET', 'utf8mb4'),
+            'DB_COLLATION' => $this->config->get('DB_COLLATION', 'utf8mb4_unicode_ci')
+        ];
+
+        // Mail Configuration
+        $this->mailConfig = [
+            'MAIL_DRIVER' => $this->config->get('MAIL_DRIVER', 'smtp'),
+            'MAIL_HOST' => $this->config->get('MAIL_HOST', 'localhost'),
+            'MAIL_PORT' => $this->config->get('MAIL_PORT', '587'),
+            'MAIL_USERNAME' => $this->config->get('MAIL_USERNAME', ''),
+            'MAIL_PASSWORD' => $this->config->get('MAIL_PASSWORD', ''),
+            'MAIL_ENCRYPTION' => $this->config->get('MAIL_ENCRYPTION', 'tls'),
+            'MAIL_FROM_ADDRESS' => $this->config->get('MAIL_FROM_ADDRESS', 'noreply@example.com'),
+            'MAIL_FROM_NAME' => $this->config->get('MAIL_FROM_NAME', 'CyberTirah Framework')
+        ];
+
+        // Define configuration constants
+        $this->defineConfigConstants();
+    }
+
+    /**
+     * Defines configuration constants for both database and mail settings.
+     */
+    private function defineConfigConstants(): void
+    {
+        foreach (array_merge($this->dbConfig, $this->mailConfig) as $constant => $value) {
+            if (!defined($constant)) {
+                define($constant, $value);
+            }
+        }
+    }
+
+    /**
+     * Defines core framework files that need to be loaded.
+     */
+    private function defineCoreFiles(): void
+    {
+        // Use glob to find all PHP files in the DIR_BRAIN_CORE directory
+        $files = glob(DIR_BRAIN_CORE . '/*.php');
+
+        // Create an associative array from the file paths
+        $this->coreFiles = [];
+        foreach ($files as $file) {
+            // Extract the filename without the extension to use as the key
+            $key = pathinfo($file, PATHINFO_FILENAME);
+            $this->coreFiles[$key] = $file;
+        }
+        // Save to JSON file
+        file_put_contents(
+            DIR_STORAGE_CACHE . '/core_paths.json',
+            json_encode($this->coreFiles, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)
+        );
+    }
+
+    /**
+     * Safe file inclusion with error handling.
+     * @param string $file The path to the file to include.
+     * @param bool $required If true, an exception is thrown if the file is not found.
+     * @return bool
+     */
+    public function safeRequire(string $file, bool $required = true): bool
+    {
+        if (!file_exists($file)) {
+            if ($required) {
+                $error = "Critical file not found: $file";
+                error_log($error);
+                http_response_code(500);
+                throw new RuntimeException("Framework Error: Missing required file: " . basename($file));
+            }
+            return false;
+        }
+
+        try {
+            require_once $file;
+            return true;
+        } catch (Throwable $e) {
+            if ($required) {
+                error_log("Error loading file $file: " . $e->getMessage());
+                throw new RuntimeException("Framework Error: Failed to load required file: " . basename($file));
+            }
+            return false;
+        }
+    }
+
+    /**
+     * Load all core framework files.
+     * @return array
+     */
+    public function loadCoreFiles(): array
+    {
+        $loadedFiles = [];
+        $failedFiles = [];
+
+        foreach ($this->coreFiles as $name => $file) {
+            try {
+                if ($this->safeRequire($file, true)) {
+                    $loadedFiles[] = $name;
+                }
+            } catch (RuntimeException $e) {
+                $failedFiles[] = $name;
+                error_log("Failed to load core file: $name - " . $e->getMessage());
+            }
+        }
+
+        if (!empty($failedFiles)) {
+            throw new RuntimeException("Critical core files failed to load: " . implode(', ', $failedFiles));
+        }
+
+        return $loadedFiles;
+    }
+
+    /**
+     * Load a utility class by name.
+     * @param string $className The name of the class to load.
+     * @return bool
+     */
+    public function loadUtilityClass(string $className): bool
+    {
+        $searchDirs = glob(DIR_BRAIN_CLASSES . '/*', GLOB_ONLYDIR);
+        foreach (array_unique($searchDirs) as $dir) {
+            $file = DIR_BRAIN_CLASSES . "/{$dir}/{$className}.php";
+            // $file = DIR_BRAIN_CLASSES . '/' . str_replace('\\', '/', $className) . '.php';
+            if (file_exists($file)) {
+                $this->safeRequire($file, true);
+                $this->loadedClasses[$className] = $file;
+                return true;
+            }
         }
         return false;
     }
 
-    require_once $file;
-    return true;
-}
+    /**
+     * Defines core application constants and sets the timezone.
+     */
+    public function defineApplicationConstants(): void
+    {
+        // Application constants
+        if (!defined('APP_INSTANCE')) define('APP_INSTANCE', 'Y');
+        if (!defined('ADMIN_PANEL')) define('ADMIN_PANEL', 'N');
+        if (!defined('VERSION')) define('VERSION', '1.0.0');
+        if (!defined('SITE_ICON')) define('SITE_ICON', $this->config->get('SITE_ICON', '/favicon.ico'));
 
-/**
- * 9. Load Core Framework Files
- */
-$coreFiles = [
-    DIR_CORE . '/controller.php',
-    DIR_CORE . '/middleware.php',
-    DIR_CORE . '/model.php',
-    DIR_CORE . '/registry.php',
-    DIR_CORE . '/router.php'
-];
+        // Timezone setup
+        date_default_timezone_set($this->config->get('APP_TIMEZONE', 'UTC'));
 
-foreach ($coreFiles as $file) {
-    safeRequire($file);
-}
-
-/**
- * 10. Load Classes
- */
-
-// Simple function to find and load utility classes
-function loadUtilityClass(string $className): bool
-{
-    $searchDirs = [
-        'api',
-        'auth',
-        'business',
-        'cache',
-        'commerce',
-        'console',
-        'console/commands',
-        'core',
-        'database',
-        'security',
-        'events',
-        'exceptions',
-        'helpers',
-        'http',
-        'localization',
-        'logging',
-        'media',
-        'providers',
-        'services',
-        'support',
-        'system',
-        'testing',
-        'view',
-    ];
-
-    // Check root
-    $rootFile = DIR_CLASSES . "/{$className}.php";
-    if (file_exists($rootFile)) {
-        safeRequire($rootFile, false);
-        return true;
+        // Set CORS headers
+        $this->setCorsHeaders();
     }
 
-    // Check subdirectories
-    foreach (array_unique($searchDirs) as $dir) {
-        $file = DIR_CLASSES . "/{$dir}/{$className}.php";
-        if (file_exists($file)) {
-            safeRequire($file, false);
-            return true;
-        }
-    }
+    /**
+     * Sets the Cross-Origin Resource Sharing (CORS) headers based on environment variables.
+     */
+    private function setCorsHeaders(): void
+    {
+        if (!headers_sent()) {
+            header('Access-Control-Allow-Origin: ' . $this->config->get('CORS_ORIGIN', '*'));
+            header('Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS');
+            header('Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With');
 
-    return false;
-}
-
-
-
-/**
- * Automatically scan and return all PHP file base names (without .php) inside DIR_CLASSES
- */
-function getAllUtilityClassNames(): array
-{
-    $classNames = [];
-    $iterator = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator(DIR_CLASSES, RecursiveDirectoryIterator::SKIP_DOTS)
-    );
-
-    foreach ($iterator as $file) {
-        if ($file->getExtension() === 'php') {
-            $classNames[] = $file->getBasename('.php');
-        }
-    }
-
-    return array_unique($classNames);
-}
-
-// Auto-scan utility class names
-$utilityClasses = getAllUtilityClassNames();
-
-// echo '<pre>';print_r($utilityClasses);exit;
-// Load all utility classes
-foreach ($utilityClasses as $class) {
-    loadUtilityClass($class);
-}
-
-/**
- * 12. Initialize Registry & Core Services
- */
-function initializeServices(): Registry
-{
-    $registry = Registry::getInstance();
-
-    // Core services
-    $registry->set('request', new Request());
-    $registry->set('response', new Response());
-    $registry->set('session', new Session());
-    $registry->set('config', new Config());
-
-    // Security: Encryption
-    if (class_exists('Encryption')) {
-        $encryptionKey = $_ENV['APP_KEY'] ?? bin2hex(random_bytes(32));
-        $registry->set('encryption', new Encryption($encryptionKey));
-    }
-
-    // Database
-    if (class_exists('Database')) {
-        $registry->set('db', new Database([
-            'hostname' => DB_HOST,
-            'username' => DB_USERNAME,
-            'password' => DB_PASSWORD,
-            'database' => DB_DATABASE,
-            'port'     => DB_PORT,
-        ]));
-    }
-
-    // Auto-discover utility classes
-    $utilityClasses = getAllUtilityClassNames();
-    $loaded = [];
-
-    foreach ($utilityClasses as $className) {
-        $key = strtolower($className);
-
-        // Avoid duplicates or existing services
-        if ($registry->has($key) || isset($loaded[$key])) {
-            continue;
-        }
-
-        // Load the class file if not yet declared
-        if (!class_exists($className)) {
-            loadUtilityClass($className);
-        }
-
-        // Now instantiate
-        if (class_exists($className)) {
-            try {
-                switch ($className) {
-                    case 'Logger':
-                        $instance = new Logger('app.log');
-                        break;
-
-                    case 'User':
-                    case 'Auth':
-                        $instance = new $className($registry);
-                        break;
-
-                    case 'Debugger':
-                        $debugMode = filter_var($_ENV['DEV_MODE'] ?? true, FILTER_VALIDATE_BOOLEAN);
-                        $instance = new Debugger(
-                            $debugMode ? 'development' : 'production',
-                            DIR_LOGS . '/debug.log'
-                        );
-                        break;
-
-                    default:
-                        $instance = new $className(); // generic constructor
-                        break;
-                }
-
-                $registry->set($key, $instance);
-                $loaded[$key] = true;
-
-            } catch (Throwable $e) {
-                // Skip silently on constructor failure
-                continue;
+            // Handle preflight OPTIONS requests
+            if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+                http_response_code(200);
+                exit();
             }
         }
     }
 
-    return $registry;
-}
+    /**
+     * Initializes and configures the session with secure settings from the .env file.
+     */
+    public function initializeSession(): void
+    {
+        $useSession = filter_var($this->config->get('USE_SESSION', true), FILTER_VALIDATE_BOOLEAN);
 
-$registry = initializeServices();
+        if (!$useSession) {
+            return; // Session is disabled in .env
+        }
 
-/**
- * 13. Load Application Settings
- */
-function loadApplicationSettings(Registry $registry): void
-{
-    $cacheFile = DIR_CACHE . '/settings.cache.php';
-    $settings = [];
+        // Detect if HTTPS is active
+        $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
+            || (isset($_SERVER['SERVER_PORT']) && $_SERVER['SERVER_PORT'] == 443)
+            || (!empty($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
 
-    try {
-        if (is_file($cacheFile) && (time() - filemtime($cacheFile)) < 3600) {
-            // Load from cache if less than 1 hour old
-            $settings = include $cacheFile;
+        $forceHttps = filter_var($this->config->get('FORCE_HTTPS', false), FILTER_VALIDATE_BOOLEAN);
+
+        // Configure session cookie parameters
+        session_set_cookie_params([
+            'lifetime' => (int)$this->config->get('SESSION_LIFETIME', 0),
+            'path'     => $this->config->get('SESSION_PATH', '/'),
+            'domain'   => $this->config->get('SESSION_DOMAIN', ''),
+            'secure'   => $forceHttps && $isHttps,
+            'httponly' => true,
+            'samesite' => $this->config->get('SESSION_SAMESITE', 'Strict')
+        ]);
+
+        // Set session name
+        session_name($this->config->get('SESSION_NAME', 'CAFSESSID'));
+
+        // Start session if not already started
+        if (session_status() === PHP_SESSION_NONE) {
+            session_start();
+        }
+    }
+
+
+    /**
+     * Configures various PHP settings based on the environment variables,
+     * including error reporting, memory limits, and execution time.
+     */
+    public function configurePHP(): void
+    {
+        $devMode = filter_var($this->config->get('DEV_MODE', true), FILTER_VALIDATE_BOOLEAN);
+
+        // Error reporting
+        if ($devMode) {
+            error_reporting(E_ALL);
+            ini_set('display_errors', '1');
+            // Basic PHP settings
+            ini_set('log_errors', '1');
+            ini_set('memory_limit', $this->config->get('MEMORY_LIMIT', '256M'));
+            set_time_limit((int)$this->config->get('TIME_LIMIT', 300));
+
+            // Additional PHP settings
+            ini_set('max_execution_time', $this->config->get('MAX_EXECUTION_TIME', '300'));
+            ini_set('max_input_time', $this->config->get('MAX_INPUT_TIME', '300'));
+            ini_set('post_max_size', $this->config->get('POST_MAX_SIZE', '50M'));
+            ini_set('upload_max_filesize', $this->config->get('UPLOAD_MAX_FILESIZE', '50M'));
         } else {
-            // Load from database
-            $db = $registry->get('db');
-            if ($db && method_exists($db, 'query')) {
-                $result = $db->query("SELECT `key`, `value` FROM " . DB_PREFIX . "settings WHERE status = 1");
-                $settings = $result->rows ?? [];
-
-                // Cache the settings
-                if (!empty($settings)) {
-                    $cacheDir = dirname($cacheFile);
-                    if (!is_dir($cacheDir)) {
-                        mkdir($cacheDir, 0755, true);
-                    }
-                    file_put_contents($cacheFile, '<?php return ' . var_export($settings, true) . ';');
-                }
-            }
-        }
-
-        // Set configuration values
-        $config = $registry->get('config');
-        if ($config) {
-            foreach ($settings as $setting) {
-                if (isset($setting['key']) && isset($setting['value'])) {
-                    $config->set($setting['key'], $setting['value']);
-                }
-            }
-        }
-    } catch (Throwable $e) {
-        if ($registry->get('logger')) {
-            $registry->get('logger')->error('Failed to load settings: ' . $e->getMessage());
-        }
-    }
-}
-
-loadApplicationSettings($registry);
-
-/**
- * 14. Global Error Handler
- */
-set_error_handler(function ($errno, $errstr, $errfile, $errline) use ($registry) {
-    $errorTypes = [
-        E_ERROR => 'Fatal Error',
-        E_WARNING => 'Warning',
-        E_PARSE => 'Parse Error',
-        E_NOTICE => 'Notice',
-        E_CORE_ERROR => 'Core Error',
-        E_CORE_WARNING => 'Core Warning',
-        E_COMPILE_ERROR => 'Compile Error',
-        E_COMPILE_WARNING => 'Compile Warning',
-        E_USER_ERROR => 'User Error',
-        E_USER_WARNING => 'User Warning',
-        E_USER_NOTICE => 'User Notice',
-        E_RECOVERABLE_ERROR => 'Recoverable Error',
-        E_DEPRECATED => 'Deprecated',
-        E_USER_DEPRECATED => 'User Deprecated'
-    ];
-
-    $errorType = $errorTypes[$errno] ?? 'Unknown Error';
-    $message = "{$errorType}: {$errstr} in {$errfile} on line {$errline}";
-
-    // Log error
-    if ($registry->get('logger')) {
-        $registry->get('logger')->error($message);
-    } else {
-        error_log($message);
-    }
-
-    // Display error in development mode
-    $devMode = filter_var($_ENV['DEV_MODE'] ?? true, FILTER_VALIDATE_BOOLEAN);
-    if ($devMode && $registry->get('debugger')) {
-        $registry->get('debugger')->displayError($message, $errno);
-    }
-
-    // Don't execute PHP internal error handler
-    return true;
-});
-
-/**
- * 15. Exception Handler
- */
-set_exception_handler(function ($exception) use ($registry) {
-    $message = "Uncaught Exception: " . $exception->getMessage() .
-        " in " . $exception->getFile() .
-        " on line " . $exception->getLine();
-
-    if ($registry->get('logger')) {
-        $registry->get('logger')->error($message);
-        $registry->get('logger')->error("Stack trace: \n" . $exception->getTraceAsString());
-    }
-
-    $devMode = filter_var($_ENV['DEV_MODE'] ?? true, FILTER_VALIDATE_BOOLEAN);
-    if ($devMode) {
-        echo "<h1>Uncaught Exception</h1>";
-        echo "<p><strong>Message:</strong> " . htmlspecialchars($exception->getMessage()) . "</p>";
-        echo "<p><strong>File:</strong> " . htmlspecialchars($exception->getFile()) . "</p>";
-        echo "<p><strong>Line:</strong> " . $exception->getLine() . "</p>";
-        echo "<pre>" . htmlspecialchars($exception->getTraceAsString()) . "</pre>";
-    } else {
-        http_response_code(500);
-        echo "Internal Server Error";
-    }
-});
-
-/**
- * 16. Shutdown Handler
- */
-register_shutdown_function(function () use ($registry) {
-    $error = error_get_last();
-
-    if ($error && in_array($error['type'], [E_ERROR, E_CORE_ERROR, E_COMPILE_ERROR, E_PARSE])) {
-        $message = "Fatal Error: {$error['message']} in {$error['file']} on line {$error['line']}";
-
-        if ($registry->get('logger')) {
-            $registry->get('logger')->error($message);
-        }
-
-        $devMode = filter_var($_ENV['DEV_MODE'] ?? true, FILTER_VALIDATE_BOOLEAN);
-        if ($devMode && $registry->get('debugger')) {
-            $registry->get('debugger')->displayError($message, $error['type']);
+            error_reporting(0);
+            ini_set('display_errors', '0');
         }
     }
 
-    // Log execution time
-    $executionTime = microtime(true) - APP_START_TIME;
-    if ($registry->get('logger') && $executionTime > 1.0) {
-        $registry->get('logger')->info("Slow request detected: {$executionTime}s");
+    /**
+     * Calculates and returns the total execution time since the bootstrap started.
+     * @return float
+     */
+    public function getExecutionTime(): float
+    {
+        return microtime(true) - $this->startTime;
     }
-});
-
-/**
- * 17. Helper Functions
- */
-function env(string $key, $default = null)
-{
-    return $_ENV[$key] ?? $default;
 }
 
-function config(string $key, $default = null)
-{
-    global $registry;
-    $config = $registry->get('config');
-    return $config ? $config->get($key, $default) : $default;
-}
-
-function app(string $service)
-{
-    global $registry;
-    return $service ? $registry->get($service) : $registry;
-}
-
-function cache(string $key, $value = null, int $ttl = 3600)
-{
-    $cache = app('cache');
-    if (!$cache) return null;
-
-    if ($key === null) return $cache;
-    if ($value === null) return $cache->get($key);
-
-    return $cache->set($key, $value, $ttl);
-}
-
-function logger(string $level, string $message)
-{
-    $log = app('logger');
-    if (!$log) return null;
-
-    if ($level === null) return $log;
-    if ($message === null) return $log;
-
-    return $log->log($level, $message);
-}
-
-define('FRAMEWORK_LOADED', true);
+chunk1::boot();
+$registry = new Registry();

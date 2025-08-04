@@ -3,7 +3,7 @@
 /**
  * Application Index File
  * Main entry point for the application
-*/
+ */
 
 // Define core constants
 $try1 = realpath(__DIR__);
@@ -13,13 +13,13 @@ if ($try1 && is_dir($try1) && file_exists($try1 . '/brain/ct_installation.php') 
 } elseif ($try2 && is_dir($try2) && file_exists($try2 . '/brain/ct_installation.php') && is_dir($try2 . '/brain')) {
     define('ROOT', $try2);
 } else {
-    die("❌ Unable to determine ROOT path.".ROOT);
+    die("❌ Unable to determine ROOT path." . ROOT);
 }
 define('DS', DIRECTORY_SEPARATOR);
 define('INSTALL_LOCK_FILE', ROOT . DS . 'installed.lock');
 define('BRAIN_DIR', ROOT . DS . 'brain');
-define('BRAIN_FILENAME', 'ct_brain');
-define('BRAIN_FILE', BRAIN_DIR . DS . BRAIN_FILENAME . '.php');
+define('BOOT_FILENAME', 'ct_brain');
+define('BOOT_FILE', BRAIN_DIR . DS . BOOT_FILENAME . '.php');
 
 /**
  * Check if application is installed
@@ -29,7 +29,6 @@ define('BRAIN_FILE', BRAIN_DIR . DS . BRAIN_FILENAME . '.php');
 // print($installationFile = BRAIN_DIR . DS . 'installation.php');exit;
 if (!file_exists(INSTALL_LOCK_FILE)) {
     $installationFile = BRAIN_DIR . DS . 'installation.php';
-
     if (file_exists($installationFile)) {
         require_once($installationFile);
     } else {
@@ -41,15 +40,17 @@ if (!file_exists(INSTALL_LOCK_FILE)) {
 /**
  * Verify core brain file exists
  */
-if (!file_exists(BRAIN_FILE)) {
-    die('Core application file not found: ' . BRAIN_FILE);
+if (!file_exists(BOOT_FILE)) {
+    die('Core application file not found: ' . BOOT_FILE);
 }
 
 /**
  * Load the core brain system
  */
 try {
-    require_once(BRAIN_FILE);
+    require_once(BOOT_FILE);
+// echo $registry; exit;
+// $registry = new Registry();
 
     // Initialize the router with registry
     if (!class_exists('router')) {
@@ -59,7 +60,6 @@ try {
     if (!isset($registry)) {
         throw new Exception('Registry object not available');
     }
-
     // Create and run the core system
     $cores = new router($registry);
     $cores->run();
@@ -83,6 +83,20 @@ try {
     }
 }
 
+// $allClasses = get_declared_classes();
+// $myClasses = [];
+
+// foreach ($allClasses as $class) {
+//     $reflect = new ReflectionClass($class);
+//     if ($reflect->isUserDefined()) {
+//         $myClasses[] = $class;
+//     }
+// }
+
+// echo '<pre>';
+// print_r($myClasses);
+
+// exit;
 /**
  * Development/Debugging Section
  * Uncomment as needed for development purposes
