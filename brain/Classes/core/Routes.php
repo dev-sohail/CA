@@ -9,8 +9,8 @@ class Routes
     private static ?string $currentRole = null;
     private static ?string $currentModule = null;
     private static string $basePath;
-    private static string $defaultRole = 'App';
-    private static string $defaultModule = 'Main';
+    private static string $defaultRole = 'app';
+    private static string $defaultModule = 'Home';
 
     public static function init(string $basePath): void
     {
@@ -124,7 +124,24 @@ class Routes
         }
 
         [$controllerName, $methodName] = $parts;
-        $controllerClass = "\\$role\\Controllers\\$module\\$controllerName";
+
+        // Support fully qualified controller class names in routes
+        if (str_contains($controllerName, '\\')) {
+            $controllerClass = '\\' . ltrim($controllerName, '\\');
+        } else {
+            $controllerClass = "\\$role\\Controllers\\$module\\$controllerName";
+        }
+
+        if (!class_exists($controllerClass)) {
+            // Filesystem fallback: load from modules/{role}/{module}/Controllers/{Controller}.php
+            $controllerFile = ROOT . '/modules/' . strtolower($role) . '/' . $module . '/Controllers/' . $controllerName . '.php';
+            if (is_file($controllerFile)) {
+                require_once $controllerFile;
+                if (class_exists($controllerName)) {
+                    $controllerClass = $controllerName; // use non-namespaced class
+                }
+            }
+        }
 
         if (!class_exists($controllerClass)) {
             Response::send404("Controller [$controllerClass] not found.");

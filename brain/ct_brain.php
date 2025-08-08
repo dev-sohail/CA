@@ -150,9 +150,16 @@ class Bootstrap extends Configurations
         // Register a PSR-4 compliant autoloader.
         if (isset($instance)) {
             spl_autoload_register(function ($className) use ($instance) {
-                $instance->loadUtilityClass($className);
-                echo '<pre>pre';
-                print_r($instance->loadUtilityClass($className));
+                // First try framework classes
+                if ($instance->loadUtilityClass($className)) {
+                    return;
+                }
+                // Then try Modules PSR-4-ish: Modules/Role/Module/Controllers/Class.php
+                $classPath = ROOT . '/modules/' . str_replace('\\', '/', ltrim($className, '\\')) . '.php';
+                if (is_file($classPath)) {
+                    require_once $classPath;
+                    return;
+                }
             });
         } else {
             throw new Exception("Instance not set before autoloader registration.");
@@ -391,12 +398,18 @@ class Bootstrap extends Configurations
     {
         $searchDirs = glob(DIR_BRAIN_CLASSES . '/*', GLOB_ONLYDIR);
         foreach (array_unique($searchDirs) as $dir) {
-            $file = DIR_BRAIN_CLASSES . "/{$dir}/{$className}.php";
-            // $file = DIR_BRAIN_CLASSES . '/' . str_replace('\\', '/', $className) . '.php';
+            $base = basename(str_replace('\\', '/', $className));
+            $file = $dir . '/' . $base . '.php';
             if (file_exists($file)) {
-
                 $this->safeRequire($file, true);
                 $this->loadedClasses[$className] = $file;
+                return true;
+            }
+            // Case-insensitive fallback (for files like response.php, template.php)
+            $fileLower = $dir . '/' . strtolower($base) . '.php';
+            if (file_exists($fileLower)) {
+                $this->safeRequire($fileLower, true);
+                $this->loadedClasses[$className] = $fileLower;
                 return true;
             }
         }
