@@ -80,7 +80,7 @@ class Configurations
     }
 }
 
-class chunk1 extends Configurations
+class Bootstrap extends Configurations
 {
     /** @var float Stores the start time of the application for performance tracking. */
     private float $startTime;
@@ -137,10 +137,6 @@ class chunk1 extends Configurations
         // Return a new instance of the class.
         $instance = new self($config);
 
-        // Register a PSR-4 compliant autoloader.
-        spl_autoload_register(function ($className) use ($instance) {
-            $instance->loadUtilityClass($className);
-        });
 
         // Load the core framework files.
         try {
@@ -151,6 +147,20 @@ class chunk1 extends Configurations
             exit('<center style="margin-top: 8rem; color: red;">' . "Critical framework files failed to load. Please check the logs." . '</center>');
         }
 
+        // Register a PSR-4 compliant autoloader.
+        if (isset($instance)) {
+            spl_autoload_register(function ($className) use ($instance) {
+                $instance->loadUtilityClass($className);
+                echo '<pre>pre';
+                print_r($instance->loadUtilityClass($className));
+            });
+        } else {
+            throw new Exception("Instance not set before autoloader registration.");
+        }
+        // spl_autoload_register(function ($className) use ($instance) {
+        //     $instance->loadUtilityClass($className);
+        // });
+        
         return $instance;
     }
 
@@ -384,6 +394,7 @@ class chunk1 extends Configurations
             $file = DIR_BRAIN_CLASSES . "/{$dir}/{$className}.php";
             // $file = DIR_BRAIN_CLASSES . '/' . str_replace('\\', '/', $className) . '.php';
             if (file_exists($file)) {
+
                 $this->safeRequire($file, true);
                 $this->loadedClasses[$className] = $file;
                 return true;
@@ -504,5 +515,5 @@ class chunk1 extends Configurations
     }
 }
 
-chunk1::boot();
+Bootstrap::boot();
 $registry = new Registry();

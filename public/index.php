@@ -83,20 +83,20 @@ try {
     }
 }
 
-// $allClasses = get_declared_classes();
-// $myClasses = [];
+$allClasses = get_declared_classes();
+$myClasses = [];
 
-// foreach ($allClasses as $class) {
-//     $reflect = new ReflectionClass($class);
-//     if ($reflect->isUserDefined()) {
-//         $myClasses[] = $class;
-//     }
-// }
+foreach ($allClasses as $class) {
+    $reflect = new ReflectionClass($class);
+    if ($reflect->isUserDefined()) {
+        $myClasses[] = $class;
+    }
+}
 
-// echo '<pre>';
-// print_r($myClasses);
+echo '<pre>';
+print_r($myClasses);
 
-// exit;
+exit;
 /**
  * Development/Debugging Section
  * Uncomment as needed for development purposes
