@@ -15,7 +15,7 @@ class Template
     {
         $this->role = $role ?? defined('DEFAULT_ROLE') ? DEFAULT_ROLE : 'App';
         $this->module = $module ?? defined('DEFAULT_MODULE') ? DEFAULT_MODULE : 'Main';
-        $this->viewPath = defined('DIR_VIEW') ? rtrim(DIR_VIEW, '/') . '/' : __DIR__ . '/../../../Views/';
+        $this->viewPath = defined('DIR_VIEW') ? rtrim(DIR_VIEW, '/') . '/' : DIR_MODULES . '/';
     }
 
     /**
@@ -82,6 +82,6 @@ class Template
     protected function getViewFilePath(string $file): string
     {
         $file = rtrim($file, $this->extension) . $this->extension;
-        return $this->viewPath . "{$this->role}/{$this->module}/view/{$file}";
+        return $this->viewPath . "{$this->role}/{$this->module}/Views/{$file}";
     }
 }

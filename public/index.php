@@ -6,15 +6,13 @@
  */
 
 // Define core constants
-$try1 = realpath(__DIR__);
-$try2 = realpath(__DIR__ . '../../');
-if ($try1 && is_dir($try1) && file_exists($try1 . '/brain/ct_installation.php') && is_dir($try1 . '/brain')) {
-    define('ROOT', $try1);
-} elseif ($try2 && is_dir($try2) && file_exists($try2 . '/brain/ct_installation.php') && is_dir($try2 . '/brain')) {
-    define('ROOT', $try2);
+$rootCandidate = dirname(__DIR__);
+if ($rootCandidate && is_dir($rootCandidate) && is_dir($rootCandidate . DIRECTORY_SEPARATOR . 'brain')) {
+    define('ROOT', $rootCandidate);
 } else {
-    die("❌ Unable to determine ROOT path." . ROOT);
+    die("❌ Unable to determine ROOT path.");
 }
+
 define('DS', DIRECTORY_SEPARATOR);
 define('INSTALL_LOCK_FILE', ROOT . DS . 'installed.lock');
 define('BRAIN_DIR', ROOT . DS . 'brain');
@@ -25,8 +23,7 @@ define('BOOT_FILE', BRAIN_DIR . DS . BOOT_FILENAME . '.php');
  * Check if application is installed
  * If not, redirect to installation process
  */
-
-// print($installationFile = BRAIN_DIR . DS . 'installation.php');exit;
+// If installation lock is missing, attempt to load the installer (optional)
 if (!file_exists(INSTALL_LOCK_FILE)) {
     $installationFile = BRAIN_DIR . DS . 'installation.php';
     if (file_exists($installationFile)) {
@@ -45,39 +42,25 @@ if (!file_exists(BOOT_FILE)) {
 }
 
 /**
- * Load the core brain system
+ * Load the core brain system and dispatch routes
  */
 try {
     require_once(BOOT_FILE);
-// echo $registry; exit;
-// $registry = new Registry();
 
-    // Initialize the router with registry
-    if (!class_exists('router')) {
-        throw new Exception('Router class not found in brain file');
+    // Initialize and dispatch application routes
+    if (class_exists('Routes')) {
+        Routes::init(DIR_MODULES);
+        Routes::loadRoutes();
+        Routes::dispatch();
+        exit;
     }
 
-    if (!isset($registry)) {
-        throw new Exception('Registry object not available');
-    }
-    // Create and run the core system
-    $cores = new router($registry);
-    $cores->run();
-
-    // Get response handler and output
-    $response = $registry->get('response');
-
-    if (!$response) {
-        throw new Exception('Response handler not available');
-    }
-
-    $response->output();
-} catch (Exception $e) {
-    // Basic error handling
+    // Fallback
+    http_response_code(500);
+    echo "Routing subsystem not available.";
+} catch (Throwable $e) {
     http_response_code(500);
     echo "Application Error: " . htmlspecialchars($e->getMessage());
-
-    // Log error if logging is available
     if (function_exists('error_log')) {
         error_log("Bootstrap Error: " . $e->getMessage());
     }

@@ -21,7 +21,7 @@ class Render
      */
     public function render(string $role, string $module, string $file, array $data = [], bool $return = false)
     {
-        $viewPath = rtrim(DIR_MODULES, '/') . "/$role/$module/view/" . ltrim($file, '/') . '.ct.php';
+        $viewPath = rtrim(DIR_MODULES, '/') . "/$role/$module/Views/" . ltrim($file, '/') . '.ct.php';
 
         if (!is_file($viewPath)) {
             trigger_error("Render error: View [$file] not found at [$viewPath]", E_USER_WARNING);

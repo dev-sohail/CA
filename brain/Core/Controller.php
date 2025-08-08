@@ -15,7 +15,7 @@ abstract class Controller
      */
     protected function loadModel($role, $module, $name)
     {
-        $path = DIR_MODULES . $role . '/' . $module . '/models/' . $name . '.php';
+        $path = DIR_MODULES . $role . '/' . $module . '/Models/' . $name . '.php';
 
         if (is_readable($path)) {
             require_once($path);
@@ -33,7 +33,7 @@ abstract class Controller
      */
     protected function loadView($role, $module, $name, $data = [])
     {
-        $path = DIR_MODULES . $role . '/' . $module . '/view/' . $name . '.php';
+        $path = DIR_MODULES . $role . '/' . $module . '/Views/' . $name . '.ct.php';
 
         if (is_readable($path)) {
             extract($data);
@@ -48,7 +48,7 @@ abstract class Controller
      */
     protected function loadController($role, $module, $name)
     {
-        $path = DIR_MODULES . $role . '/' . $module . '/controllers/' . $name . '.php';
+        $path = DIR_MODULES . $role . '/' . $module . '/Controllers/' . $name . '.php';
 
         if (is_readable($path)) {
             require_once($path);
